@@ -40,6 +40,10 @@ export interface TreeContextType {
   // 新增：缩放偏移量 (双手手势控制)
   zoomOffset: number;
   setZoomOffset: Dispatch<SetStateAction<number>>;
+
+  // 新增：照片关闭时间 (用于防止关闭后误触)
+  lastCloseTime: number;
+  setLastCloseTime: (time: number) => void;
 }
 
 export interface ParticleData {

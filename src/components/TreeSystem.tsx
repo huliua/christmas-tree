@@ -145,12 +145,13 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
 
 // --- Main Tree System ---
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset, lastCloseTime } = useContext(TreeContext) as TreeContextType;
   const { camera, raycaster } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const lineRef = useRef<any>(null);
 
   const progress = useRef(0);
   const treeRotation = useRef(0);
@@ -178,13 +179,14 @@ const TreeSystem: React.FC = () => {
 
   // --- Data Generation ---
   const { foliageData, photosData, lightsData } = useMemo(() => {
-    const particleCount = 4500;
+    const particleCount = 8000; // Increased for more impact
     const foliage = new Float32Array(particleCount * 3); const foliageChaos = new Float32Array(particleCount * 3); const foliageTree = new Float32Array(particleCount * 3); const sizes = new Float32Array(particleCount);
-    const sphere = random.inSphere(new Float32Array(particleCount * 3), { radius: 18 }); for (let i = 0; i < particleCount * 3; i++) foliageChaos[i] = sphere[i];
+    // Chaos radius increased to 30 for "Explosion" effect
+    const sphere = random.inSphere(new Float32Array(particleCount * 3), { radius: 30 }); for (let i = 0; i < particleCount * 3; i++) foliageChaos[i] = sphere[i];
     for (let i = 0; i < particleCount; i++) { const i3 = i * 3; const h = Math.random() * 14; const coneRadius = (14 - h) * 0.45; const angle = h * 3.0 + Math.random() * Math.PI * 2; foliageTree[i3] = Math.cos(angle) * coneRadius; foliageTree[i3 + 1] = h - 6; foliageTree[i3 + 2] = Math.sin(angle) * coneRadius; sizes[i] = Math.random() * 1.5 + 0.5; }
 
-    const lightCount = 300;
-    const lightChaos = new Float32Array(lightCount * 3); const lightTree = new Float32Array(lightCount * 3); const lSphere = random.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
+    const lightCount = 500; // Increased lights
+    const lightChaos = new Float32Array(lightCount * 3); const lightTree = new Float32Array(lightCount * 3); const lSphere = random.inSphere(new Float32Array(lightCount * 3), { radius: 35 });
     for (let i = 0; i < lightCount * 3; i++) lightChaos[i] = lSphere[i];
     for (let i = 0; i < lightCount; i++) { const i3 = i * 3; const t = i / lightCount; const h = t * 13; const coneRadius = (14 - h) * 0.48; const angle = t * Math.PI * 25; lightTree[i3] = Math.cos(angle) * coneRadius; lightTree[i3 + 1] = h - 6; lightTree[i3 + 2] = Math.sin(angle) * coneRadius; }
 
@@ -274,25 +276,15 @@ const TreeSystem: React.FC = () => {
 
   useEffect(() => {
     if (state === 'CHAOS' && pointer) {
-      // 如果已经有选中的照片，检查是否需要关闭
+      // 优先级最高：如果照片已打开，任何交互强制关闭当前照片，并阻止后续逻辑
       if (selectedPhotoUrl) {
-        // 检查锁定时间 (增加到 3 秒)
-        if (Date.now() - photoOpenTimeRef.current < 3000) {
-          return; // 锁定期间禁止关闭
-        }
+         setSelectedPhotoUrl(null);
+         return; 
+      }
 
-        // 点击任意位置关闭 (除了照片本身，但这里简化为再次点击关闭)
-        // 实际上 App.tsx 里的 PhotoModal 遮罩层点击也会触发 setSelectedPhotoUrl(null)
-        // 这里主要处理点击"空地"的情况
-
-        // 重新计算是否点到了照片 (为了避免误触关闭)
-        // 但根据需求"单指照片可以精准选中并关闭了"，说明用户希望点击照片也能关闭?
-        // 现在的逻辑是: 如果有点到照片 -> 切换; 如果没点到 -> 关闭
-
-        // 让我们简化逻辑: 只要过了2秒，点击任何地方都尝试关闭或切换
-        // 但为了防止误触，我们还是检测一下
-
-        // ... (保持原有检测逻辑，但增加关闭逻辑)
+      // 防止关闭后立即误触：检查全局冷却时间 (500ms)
+      if (Date.now() - lastCloseTime < 500) {
+         return;
       }
 
       // 1. 转换 Pointer 到 NDC (-1 to 1)
@@ -302,7 +294,7 @@ const TreeSystem: React.FC = () => {
       // 2. 遍历所有照片，计算屏幕空间距离
       let closestPhotoId: string | null = null;
       let minDistance = Infinity;
-      const SELECTION_THRESHOLD = 0.05; // Reduced from 0.15 to 0.05 for higher precision
+      const SELECTION_THRESHOLD = 0.15;
 
       photoObjects.forEach(obj => {
         if (!obj.ref.current) return;
@@ -351,7 +343,19 @@ const TreeSystem: React.FC = () => {
     const targetProgress = state === 'FORMED' ? 1 : 0;
     progress.current = THREE.MathUtils.damp(progress.current, targetProgress, 2.0, delta);
     const ease = progress.current * progress.current * (3 - 2 * progress.current);
-    treeRotation.current += (state === 'FORMED' ? (rotationSpeed + rotationBoost) : 0.05) * delta;
+    
+    // Rotation Logic: Allow boost in all states
+    const baseSpeed = state === 'FORMED' ? rotationSpeed : 0.05;
+    treeRotation.current += (baseSpeed + rotationBoost) * delta;
+
+    // Line Opacity Animation
+    if (lineRef.current && lineRef.current.material) {
+       // Smoothly fade in line only when mostly formed (late fade-in)
+       // ease goes from 0 (Chaos) to 1 (Formed). We fade in from 0.6 to 1.0
+       const lineFade = THREE.MathUtils.smoothstep(ease, 0.6, 1.0);
+       lineRef.current.material.opacity = lineFade * 0.15;
+       lineRef.current.visible = lineFade > 0.01;
+    }
 
     // 应用平移 (带阻尼)
     // 允许在任何状态下平移，使用较快的跟随速度
@@ -475,12 +479,13 @@ const TreeSystem: React.FC = () => {
         </group>
       ))}
 
-      {/* Time Line Connection (Only visible in FORMED state) */}
-      {state === 'FORMED' && (
+      {/* Time Line Connection (Only visible in FORMED state, but we render always and control opacity via ref for smooth transition) */}
+      {photoObjects.length > 0 && (
         <Line
+          ref={lineRef}
           points={photoObjects.map(obj => new THREE.Vector3(...obj.data.treePos))}
           color="#ffd700"
-          opacity={0.3}
+          opacity={0} // Start invisible, controlled by useFrame
           transparent
           lineWidth={1}
         />

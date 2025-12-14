@@ -26,37 +26,67 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
             {/* 核心光点 */}
             <div className={`rounded-full transition-all duration-300 ${progress > 0.8 ? 'w-4 h-4 bg-emerald-400 shadow-[0_0_20px_#34d399]' : 'w-2 h-2 bg-amber-200 shadow-[0_0_15px_#fcd34d]'}`} />
 
-            {/* 进度光环 - 魔法符文风格 */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border border-white/20 animate-spin-slow"></div>
-
-            <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 -rotate-90 overflow-visible">
-                <defs>
-                    <linearGradient id="magicGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#34d399" />
-                        <stop offset="100%" stopColor="#fbbf24" />
-                    </linearGradient>
-                    <filter id="glow">
-                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
-                        <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                </defs>
-                {/* 倒计时圆环 */}
-                <circle
-                    cx="24" cy="24" r="20"
-                    fill="none"
-                    stroke="url(#magicGradient)"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeDasharray="125.6"
-                    strokeDashoffset={125.6 * (1 - progress)}
-                    filter="url(#glow)"
-                    className="transition-[stroke-dashoffset] duration-75 ease-linear"
-                />
-            </svg>
-
             {/* 粒子拖尾装饰 (CSS 动画) */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-emerald-500/10 to-amber-500/10 rounded-full blur-xl animate-pulse"></div>
         </motion.div>
+    );
+};
+
+// --- 背景音乐组件 ---
+const BackgroundMusic: React.FC = () => {
+    const [muted, setMuted] = useState(false); // Default ON (try autoplay)
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    // Keyboard listener for Spacebar
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                e.preventDefault(); // Prevent scrolling
+                setMuted(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = 0.4;
+            if (!muted) {
+                const playPromise = audioRef.current.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.log("Auto-play was prevented by browser policy. User interaction required.");
+                        // Optionally setMuted(true) here if you want to reflect reality,
+                        // but keeping it false allows it to start on first click elsewhere if logic permits.
+                    });
+                }
+            } else {
+                audioRef.current.pause();
+            }
+        }
+    }, [muted]);
+
+    return (
+        <div className="absolute top-8 right-8 z-50">
+             <audio
+                ref={audioRef}
+                src="/music/bgm.mp3"
+                loop
+                autoPlay // Try attribute-based autoplay too
+            />
+            <button
+                onClick={() => setMuted(!muted)}
+                className="p-3 bg-black/40 backdrop-blur-md border border-white/20 rounded-full hover:bg-white/10 transition-colors group"
+                title="Toggle Music (Space)"
+            >
+                {muted ? (
+                    <span className="text-2xl opacity-70 group-hover:opacity-100">🔇</span>
+                ) : (
+                    <span className="text-2xl opacity-70 group-hover:opacity-100 animate-pulse">🎵</span>
+                )}
+            </button>
+        </div>
     );
 };
 
@@ -88,7 +118,7 @@ const PhotoModal: React.FC<{ url: string | null, onClose: () => void }> = ({ url
 }
 
 const AppContent: React.FC = () => {
-    const { state, setState, webcamEnabled, setWebcamEnabled, pointer, hoverProgress, selectedPhotoUrl, setSelectedPhotoUrl, clickTrigger } = useContext(TreeContext) as TreeContextType;
+    const { state, setState, webcamEnabled, setWebcamEnabled, pointer, hoverProgress, selectedPhotoUrl, setSelectedPhotoUrl, clickTrigger, setLastCloseTime } = useContext(TreeContext) as TreeContextType;
 
     useEffect(() => {
         if (selectedPhotoUrl && pointer) {
@@ -98,14 +128,19 @@ const AppContent: React.FC = () => {
             if (element) {
                 const isImage = element.tagName === 'IMG';
                 const isBackdrop = element.id === 'photo-modal-backdrop';
-                if (isBackdrop || isImage) setSelectedPhotoUrl(null);
+                if (isBackdrop || isImage) {
+                    setSelectedPhotoUrl(null);
+                    setLastCloseTime(Date.now());
+                }
             }
         }
     }, [clickTrigger]);
 
     return (
         <main className="relative w-full h-screen bg-black text-white overflow-hidden cursor-none">
-            {/* 摄像头背景层 (z-0) */}
+            <BackgroundMusic />
+
+            {/* 摄像头背景层 (z-0) - NOW REPOSITIONED IN COMPONENT */}
             {webcamEnabled && <GestureInput />}
 
             {/* 3D 场景层 (z-10) */}
@@ -119,25 +154,14 @@ const AppContent: React.FC = () => {
             {webcamEnabled && <TechEffects />}
 
             {/* UI 层 (z-30) */}
-            <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between p-8">
-                <header className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-4xl md:text-6xl font-bold cinzel text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-green-200 to-amber-100 drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">
-                            🎄 CHRISTMAS MEMORIES ❄️
-                        </h1>
-                        <p className="text-red-400/80 cinzel tracking-widest text-sm mt-2">
-                            {state === 'CHAOS' ? '✨ SCATTERED MEMORIES // EXPLORE YOUR JOURNEY ✨' : '🎁 MEMORY TREE // TIMELINE OF LOVE 🎁'}
-                        </p>
-                    </div>
-                </header>
-            </div>
+
 
             {/* 光标层 (z-200) */}
             <DreamyCursor pointer={pointer} progress={hoverProgress} />
 
             {/* 弹窗层 (z-100) */}
             <AnimatePresence>
-                {selectedPhotoUrl && <PhotoModal url={selectedPhotoUrl} onClose={() => setSelectedPhotoUrl(null)} />}
+                {selectedPhotoUrl && <PhotoModal url={selectedPhotoUrl} onClose={() => { setSelectedPhotoUrl(null); setLastCloseTime(Date.now()); }} />}
             </AnimatePresence>
         </main>
     );
@@ -154,6 +178,7 @@ const App: React.FC = () => {
     const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
     const [panOffset, setPanOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
     const [zoomOffset, setZoomOffset] = useState<number>(0);
+    const [lastCloseTime, setLastCloseTime] = useState<number>(0);
 
     return (
         <TreeContext.Provider value={{
@@ -166,7 +191,8 @@ const App: React.FC = () => {
             selectedPhotoUrl, setSelectedPhotoUrl,
             panOffset, setPanOffset,
             rotationBoost, setRotationBoost,
-            zoomOffset, setZoomOffset
+            zoomOffset, setZoomOffset,
+            lastCloseTime, setLastCloseTime
         }}>
             <AppContent />
         </TreeContext.Provider>
