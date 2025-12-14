@@ -1,8 +1,7 @@
-
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
 import { useFrame, extend, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { shaderMaterial, Text, Line } from '@react-three/drei';
+import { shaderMaterial, Text, Line, Sparkles } from '@react-three/drei';
 import * as random from 'maath/random/dist/maath-random.esm';
 import { TreeContext, ParticleData, TreeContextType } from '../types';
 
@@ -145,13 +144,14 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
 
 // --- Main Tree System ---
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset, lastCloseTime } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset, lastCloseTime, hoveredPhotoId, setHoveredPhotoId } = useContext(TreeContext) as TreeContextType;
   const { camera, raycaster } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
   const lineRef = useRef<any>(null);
+  const starRef = useRef<THREE.Group>(null);
 
   const progress = useRef(0);
   const treeRotation = useRef(0);
@@ -192,17 +192,17 @@ const TreeSystem: React.FC = () => {
 
     // 实际存在的照片文件列表
     const photoFiles = [
-      "2024_06_1.jpg", "2024_07_1.jpg", "2024_07_2.jpg",
-      "2024_09_1.jpg", "2024_09_2.jpg", "2024_09_3.jpg",
-      "2024_09_4.jpg", "2024_09_5.jpg", "2024_09_6.jpg",
-      "2024_10_1.jpg", "2024_11_1.jpg", "2024_12_1.jpg",
-      "2024_12_2.jpg", "2024_12_3.jpg", "2025_01_1.jpg",
-      "2025_01_2.jpg", "2025_01_3.jpg", "2025_01_4.jpg",
-      "2025_01_5.jpg", "2025_01_6.jpg", "2025_01_7.jpg",
-      "2025_02_1.jpg", "2025_05_1.jpg", "2025_06_1.jpg",
-      "2025_06_2.jpg", "2025_06_3.jpg", "2025_09_1.jpg",
-      "2025_10_1.jpg", "2025_10_2.jpg", "2025_11_1.jpg",
-      "2025_11_2.jpg"
+      "1.jpg", "2.jpg", "3.jpg",
+      "4.jpg", "5.jpg", "6.heic",
+      "7.jpg", "8.jpg", "9.jpg",
+      "10.jpg", "11.jpg", "12.jpg",
+      "13.png", "14.heic", "15.png",
+      "16.jpg", "17.jpg", "18.jpg",
+      "19.jpg", "20.jpg", "21.jpg",
+      "22.jpg", "23.png", "24.jpg",
+      "25.png", "16.jpg", "27.jpg",
+      "28.jpg", "29.png", "30.jpg",
+      "31.heic"
     ];
 
     // 按时间排序
@@ -270,73 +270,40 @@ const TreeSystem: React.FC = () => {
     setPhotoObjects(photosData.map(p => ({ id: p.id, url: p.image!, ref: React.createRef(), data: p, pos: new THREE.Vector3(), rot: new THREE.Euler(), scale: p.scale })));
   }, [photosData]);
 
-  // --- 处理点击事件 ---
-  // --- 处理点击事件 (Screen-Space Distance Selection) ---
-  const photoOpenTimeRef = useRef<number>(0);
-
+  // --- 处理悬停 (Hover) ---
+  // 更新全局 hoveredPhotoId，让 App.tsx 处理点击逻辑
   useEffect(() => {
-    if (state === 'CHAOS' && pointer) {
-      // 优先级最高：如果照片已打开，任何交互强制关闭当前照片，并阻止后续逻辑
-      if (selectedPhotoUrl) {
-         setSelectedPhotoUrl(null);
-         return; 
-      }
-
-      // 防止关闭后立即误触：检查全局冷却时间 (500ms)
-      if (Date.now() - lastCloseTime < 500) {
-         return;
-      }
-
-      // 1. 转换 Pointer 到 NDC (-1 to 1)
-      const ndcX = pointer.x * 2 - 1;
-      const ndcY = -(pointer.y * 2) + 1;
-
-      // 2. 遍历所有照片，计算屏幕空间距离
-      let closestPhotoId: string | null = null;
-      let minDistance = Infinity;
-      const SELECTION_THRESHOLD = 0.15;
-
-      photoObjects.forEach(obj => {
-        if (!obj.ref.current) return;
-
-        // 获取照片世界坐标
-        const worldPos = new THREE.Vector3();
-        obj.ref.current.getWorldPosition(worldPos);
-
-        // 投影到屏幕空间
-        const screenPos = worldPos.clone().project(camera);
-
-        // 检查是否在相机前方 (z < 1)
-        if (screenPos.z < 1) {
-          // 计算 NDC 距离
-          const dist = Math.hypot(screenPos.x - ndcX, screenPos.y - ndcY);
-
-          if (dist < SELECTION_THRESHOLD && dist < minDistance) {
-            minDistance = dist;
-            closestPhotoId = obj.data.image!;
-          }
-        }
-      });
-
-      if (closestPhotoId) {
-        // 如果点击的是当前照片，且过了锁定时间 -> 关闭
-        if (selectedPhotoUrl === closestPhotoId) {
-          if (Date.now() - photoOpenTimeRef.current > 3000) {
-            setSelectedPhotoUrl(null);
-          }
-        } else {
-          // 选中新照片
-          setSelectedPhotoUrl(closestPhotoId);
-          photoOpenTimeRef.current = Date.now(); // 记录打开时间
-        }
-      } else if (selectedPhotoUrl) {
-        // Clicked on empty space -> Close photo (if not locked)
-        if (Date.now() - photoOpenTimeRef.current > 3000) {
-          setSelectedPhotoUrl(null);
-        }
-      }
+    if (state !== 'CHAOS' || !pointer) {
+       if (hoveredPhotoId !== null) setHoveredPhotoId(null);
+       return;
     }
-  }, [clickTrigger]); // Remove selectedPhotoUrl dependency to avoid double-firing loop
+
+    const ndcX = pointer.x * 2 - 1;
+    const ndcY = -(pointer.y * 2) + 1;
+
+    let closestPhotoId: string | null = null;
+    let minDistance = Infinity;
+    const SELECTION_THRESHOLD = 0.15;
+
+    photoObjects.forEach(obj => {
+      if (!obj.ref.current) return;
+      const worldPos = new THREE.Vector3();
+      obj.ref.current.getWorldPosition(worldPos);
+      const screenPos = worldPos.clone().project(camera);
+
+      if (screenPos.z < 1) {
+        const dist = Math.hypot(screenPos.x - ndcX, screenPos.y - ndcY);
+        if (dist < SELECTION_THRESHOLD && dist < minDistance) {
+          minDistance = dist;
+          closestPhotoId = obj.data.image!;
+        }
+      }
+    });
+
+    if (closestPhotoId !== hoveredPhotoId) {
+       setHoveredPhotoId(closestPhotoId);
+    }
+  }, [pointer, state, hoveredPhotoId, photoObjects]); 
 
   // --- Animation Loop ---
   useFrame((state3d, delta) => {
@@ -355,6 +322,12 @@ const TreeSystem: React.FC = () => {
        const lineFade = THREE.MathUtils.smoothstep(ease, 0.6, 1.0);
        lineRef.current.material.opacity = lineFade * 0.15;
        lineRef.current.visible = lineFade > 0.01;
+    }
+
+    // Star Scale Animation
+    if (starRef.current) {
+        const starScale = THREE.MathUtils.smoothstep(ease, 0.8, 1.0);
+        starRef.current.scale.setScalar(starScale);
     }
 
     // 应用平移 (带阻尼)
@@ -490,6 +463,16 @@ const TreeSystem: React.FC = () => {
           lineWidth={1}
         />
       )}
+
+      {/* Top Star - Glowing Octahedron */}
+      <group ref={starRef} position={[0, 7.8, 0]} scale={[0, 0, 0]}>
+        <mesh>
+          <octahedronGeometry args={[0.6, 0]} />
+          <meshStandardMaterial color="#ffd700" emissive="#ffaa00" emissiveIntensity={3} toneMapped={false} />
+        </mesh>
+        <pointLight color="#ffaa00" intensity={2} distance={8} decay={2} />
+        <Sparkles count={30} scale={2.5} size={5} speed={0.4} opacity={0.8} color="#ffffaa" />
+      </group>
     </group>
   );
 };

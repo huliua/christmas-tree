@@ -27,6 +27,7 @@ const GestureInput: React.FC = () => {
   const clickCooldownRef = useRef<number>(0);
   const lastPointingTimeRef = useRef<number>(0);
   const lastPointerPosRef = useRef<{ x: number, y: number } | null>(null);
+  const lastPinchStatusRef = useRef<boolean>(false);
 
   // 记录上一帧手掌中心位置，用于计算位移差
   const lastPalmPos = useRef<{ x: number, y: number } | null>(null);
@@ -210,13 +211,15 @@ const GestureInput: React.FC = () => {
 
           // 5. Click Logic (Pinch)
           // Works in all states (to open or close)
-          if (isPinching && name !== 'Closed_Fist') { // Guard against Fist triggering pinch
+          // Require dynamic transition: Not Pinching -> Pinching to prevent accidental clicks while holding
+          if (isPinching && !lastPinchStatusRef.current && name !== 'Closed_Fist') { 
              if (clickCooldownRef.current <= 0) {
                  setClickTrigger(Date.now());
                  clickCooldownRef.current = 1.0; // Cooldown 1s
                  detectedColor = "rgba(255, 255, 0, 1.0)"; 
              }
           }
+          lastPinchStatusRef.current = isPinching;
           
           if (clickCooldownRef.current > 0) {
              clickCooldownRef.current -= delta;
@@ -270,11 +273,6 @@ const GestureInput: React.FC = () => {
           INIT...
         </div>
       )}
-      
-      {/* 状态指示器 */}
-      <div className="absolute bottom-1 left-2 text-[10px] text-white/70 cinzel">
-         {appState} MODE
-      </div>
     </div>
   );
 };

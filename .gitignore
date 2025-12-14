@@ -28,6 +28,7 @@ public/photos/*.jpg
 public/photos/*.jpeg
 public/photos/*.png
 public/photos/*.gif
+public/photos/*.heic
 public/photos/tmp/
 
 # Keep README for documentation

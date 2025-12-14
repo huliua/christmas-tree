@@ -2,7 +2,6 @@ import React, { useState, Suspense, useContext, useEffect, useRef } from 'react'
 import { TreeContextType, AppState, TreeContext, PointerCoords } from './types';
 import Experience from './components/Experience';
 import GestureInput from './components/GestureInput';
-import TechEffects from './components/TechEffects';
 import { AnimatePresence, motion } from 'framer-motion';
 
 
@@ -23,8 +22,12 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
             transition={{ duration: 0.1, ease: "easeOut" }}
             style={{ x: "-50%", y: "-50%" }}
         >
-            {/* 核心光点 */}
-            <div className={`rounded-full transition-all duration-300 ${progress > 0.8 ? 'w-4 h-4 bg-emerald-400 shadow-[0_0_20px_#34d399]' : 'w-2 h-2 bg-amber-200 shadow-[0_0_15px_#fcd34d]'}`} />
+            {/* 核心光点 - 增强版 */}
+            <div className="relative flex items-center justify-center">
+                <div className="w-4 h-4 bg-white rounded-full shadow-[0_0_15px_#fcd34d] z-10" />
+                {/* 瞄准环 */}
+                <div className="absolute w-8 h-8 border border-white/60 rounded-full" />
+            </div>
 
             {/* 粒子拖尾装饰 (CSS 动画) */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-emerald-500/10 to-amber-500/10 rounded-full blur-xl animate-pulse"></div>
@@ -71,7 +74,7 @@ const BackgroundMusic: React.FC = () => {
         <div className="absolute top-8 right-8 z-50">
              <audio
                 ref={audioRef}
-                src="/music/bgm.mp3"
+                src="/music/music.mp3"
                 loop
                 autoPlay // Try attribute-based autoplay too
             />
@@ -118,20 +121,21 @@ const PhotoModal: React.FC<{ url: string | null, onClose: () => void }> = ({ url
 }
 
 const AppContent: React.FC = () => {
-    const { state, setState, webcamEnabled, setWebcamEnabled, pointer, hoverProgress, selectedPhotoUrl, setSelectedPhotoUrl, clickTrigger, setLastCloseTime } = useContext(TreeContext) as TreeContextType;
+    const { state, setState, webcamEnabled, setWebcamEnabled, pointer, hoverProgress, selectedPhotoUrl, setSelectedPhotoUrl, clickTrigger, setLastCloseTime, hoveredPhotoId, lastCloseTime } = useContext(TreeContext) as TreeContextType;
 
     useEffect(() => {
-        if (selectedPhotoUrl && pointer) {
-            const x = pointer.x * window.innerWidth;
-            const y = pointer.y * window.innerHeight;
-            const element = document.elementFromPoint(x, y);
-            if (element) {
-                const isImage = element.tagName === 'IMG';
-                const isBackdrop = element.id === 'photo-modal-backdrop';
-                if (isBackdrop || isImage) {
-                    setSelectedPhotoUrl(null);
-                    setLastCloseTime(Date.now());
-                }
+        // Skip initial mount or invalid trigger
+        if (clickTrigger === 0) return;
+
+        // Centralized Click Logic
+        if (selectedPhotoUrl) {
+            // Priority 1: Close if open
+            setSelectedPhotoUrl(null);
+            setLastCloseTime(Date.now());
+        } else if (hoveredPhotoId) {
+            // Priority 2: Open if hovering a photo (and not in cooldown)
+            if (Date.now() - lastCloseTime > 500) {
+                setSelectedPhotoUrl(hoveredPhotoId);
             }
         }
     }, [clickTrigger]);
@@ -149,12 +153,6 @@ const AppContent: React.FC = () => {
                     <Experience />
                 </Suspense>
             </div>
-
-            {/* 科技感特效层 (z-20) */}
-            {webcamEnabled && <TechEffects />}
-
-            {/* UI 层 (z-30) */}
-
 
             {/* 光标层 (z-200) */}
             <DreamyCursor pointer={pointer} progress={hoverProgress} />
@@ -179,6 +177,7 @@ const App: React.FC = () => {
     const [panOffset, setPanOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
     const [zoomOffset, setZoomOffset] = useState<number>(0);
     const [lastCloseTime, setLastCloseTime] = useState<number>(0);
+    const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
 
     return (
         <TreeContext.Provider value={{
@@ -192,7 +191,8 @@ const App: React.FC = () => {
             panOffset, setPanOffset,
             rotationBoost, setRotationBoost,
             zoomOffset, setZoomOffset,
-            lastCloseTime, setLastCloseTime
+            lastCloseTime, setLastCloseTime,
+            hoveredPhotoId, setHoveredPhotoId
         }}>
             <AppContent />
         </TreeContext.Provider>

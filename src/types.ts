@@ -44,6 +44,10 @@ export interface TreeContextType {
   // 新增：照片关闭时间 (用于防止关闭后误触)
   lastCloseTime: number;
   setLastCloseTime: (time: number) => void;
+
+  // 新增：当前悬停的照片ID (用于将点击逻辑移至 App.tsx 统一处理)
+  hoveredPhotoId: string | null;
+  setHoveredPhotoId: (id: string | null) => void;
 }
 
 export interface ParticleData {
